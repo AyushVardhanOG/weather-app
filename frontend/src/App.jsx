@@ -66,7 +66,7 @@ export default function App() {
       </main>
 
       <footer style={{ borderTop:'1px solid var(--card-border)', padding:'1.5rem 2rem', textAlign:'center', color:'var(--text-secondary)', fontSize:'0.8rem' }}>
-        <strong style={{color:'var(--sky-light)'}}>WeatherScope</strong> · Built for PM Accelerator Technical Assessment ·
+        <strong style={{color:'var(--sky-light)'}}>WeatherScope</strong> · Built by <a href="https://github.com/AyushVardhanOG" target="_blank" rel="noreferrer" style={{color:'var(--sky-light)'}}>Ayush Vardhan Singh</a> ·
         Powered by <a href="https://open-meteo.com" target="_blank" rel="noreferrer" style={{color:'var(--sky-light)'}}>Open-Meteo</a> &amp; <a href="https://www.openstreetmap.org" target="_blank" rel="noreferrer" style={{color:'var(--sky-light)'}}>OpenStreetMap</a>
       </footer>
 
