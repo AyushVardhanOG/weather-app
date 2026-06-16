@@ -1,4 +1,4 @@
-const BASE = 'http://localhost:3001/api';
+const BASE = 'https://weather-app-backend.onrender.com/api';
 
 async function req(url, opts = {}) {
   const res = await fetch(BASE + url, opts);
