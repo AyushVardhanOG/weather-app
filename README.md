@@ -1,6 +1,6 @@
 # ⛅ WeatherScope My Full Stack Weather App
 
-> **PM Accelerator AI Engineer Intern — Technical Assessment (Full Stack)**
+> **PM Accelerator AI Engineer Intern - Technical Assessment (Full Stack)**
 > Completed by: [Ayush Vardhan Singh]
 
 ---
