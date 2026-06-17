@@ -191,7 +191,7 @@ app.get('/api/weather/current', async (req, res) => {
 // CREATE - Store a query with date range
 app.post('/api/queries', async (req, res) => {
   try {
-    const { location, dateFrom, dateTo, notes } = req.body;
+    const { location, dateFrom, dateTo, notes, lat: providedLat, lon: providedLon, displayName } = req.body;
     if (!location || !dateFrom || !dateTo) {
       return res.status(400).json({ error: 'location, dateFrom, dateTo are required' });
     }
@@ -199,27 +199,40 @@ app.post('/api/queries', async (req, res) => {
     validateDateRange(dateFrom, dateTo);
 
     let geo;
-    // Auto-detect GPS coords like "40.7128,-74.0060"
-    const coordsMatch = location.match(/^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/);
-    if (coordsMatch) {
-      geo = await geocodeCoords(parseFloat(coordsMatch[1]), parseFloat(coordsMatch[2]));
+    if (providedLat !== undefined && providedLon !== undefined) {
+      // Browser already geocoded this — skip server-side geocoding entirely
+      geo = { lat: parseFloat(providedLat), lon: parseFloat(providedLon), display: displayName || location };
     } else {
-      geo = await geocode(location);
+      // Fallback: server geocodes (used if browser geocoding wasn't possible)
+      const coordsMatch = location.match(/^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/);
+      if (coordsMatch) {
+        geo = await geocodeCoords(parseFloat(coordsMatch[1]), parseFloat(coordsMatch[2]));
+      } else {
+        geo = await geocode(location);
+      }
     }
 
-    const weatherData = await fetchWeather(geo.lat, geo.lon, dateFrom, dateTo);
+    let forecast, timezone;
+    if (req.body.forecast && Array.isArray(req.body.forecast)) {
+      // Browser already fetched weather data — skip server-side weather API call entirely
+      forecast = req.body.forecast;
+      timezone = req.body.timezone || 'UTC';
+    } else {
+      // Fallback: server fetches weather itself
+      const weatherData = await fetchWeather(geo.lat, geo.lon, dateFrom, dateTo);
+      forecast = weatherData.daily.time.map((date, i) => ({
+        date,
+        maxTemp: weatherData.daily.temperature_2m_max[i],
+        minTemp: weatherData.daily.temperature_2m_min[i],
+        precipitation: weatherData.daily.precipitation_sum[i],
+        windspeed: weatherData.daily.windspeed_10m_max[i],
+        weathercode: weatherData.daily.weathercode[i],
+        description: wmoDescription(weatherData.daily.weathercode[i])
+      }));
+      timezone = weatherData.timezone;
+    }
 
-    const forecast = weatherData.daily.time.map((date, i) => ({
-      date,
-      maxTemp: weatherData.daily.temperature_2m_max[i],
-      minTemp: weatherData.daily.temperature_2m_min[i],
-      precipitation: weatherData.daily.precipitation_sum[i],
-      windspeed: weatherData.daily.windspeed_10m_max[i],
-      weathercode: weatherData.daily.weathercode[i],
-      description: wmoDescription(weatherData.daily.weathercode[i])
-    }));
-
-    const stored = JSON.stringify({ forecast, timezone: weatherData.timezone });
+    const stored = JSON.stringify({ forecast, timezone });
 
     db.run(
       `INSERT INTO weather_queries (location_name, latitude, longitude, date_from, date_to, weather_data, notes)
@@ -290,7 +303,7 @@ app.get('/api/queries/:id', (req, res) => {
 // UPDATE - update notes or re-fetch weather
 app.put('/api/queries/:id', async (req, res) => {
   try {
-    const { notes, dateFrom, dateTo, location } = req.body;
+    const { notes, dateFrom, dateTo, location, lat: providedLat, lon: providedLon, displayName, forecast: providedForecast, timezone: providedTz } = req.body;
     const id = parseInt(req.params.id);
 
     const existing = db.exec(`SELECT * FROM weather_queries WHERE id = ${id}`);
@@ -310,25 +323,38 @@ app.put('/api/queries/:id', async (req, res) => {
 
     validateDateRange(newDateFrom, newDateTo);
 
-    if (location) {
+    if (providedLat !== undefined && providedLon !== undefined) {
+      // Browser already geocoded this — skip server-side geocoding
+      lat = parseFloat(providedLat);
+      lon = parseFloat(providedLon);
+      locationName = displayName || location;
+    } else if (location) {
       const geo = await geocode(location);
       lat = geo.lat;
       lon = geo.lon;
       locationName = geo.display;
     }
 
-    const weatherData = await fetchWeather(lat, lon, newDateFrom, newDateTo);
-    const forecast = weatherData.daily.time.map((date, i) => ({
-      date,
-      maxTemp: weatherData.daily.temperature_2m_max[i],
-      minTemp: weatherData.daily.temperature_2m_min[i],
-      precipitation: weatherData.daily.precipitation_sum[i],
-      windspeed: weatherData.daily.windspeed_10m_max[i],
-      weathercode: weatherData.daily.weathercode[i],
-      description: wmoDescription(weatherData.daily.weathercode[i])
-    }));
+    let forecast, timezone;
+    if (providedForecast && Array.isArray(providedForecast)) {
+      // Browser already fetched weather — skip server-side weather API call
+      forecast = providedForecast;
+      timezone = providedTz || 'UTC';
+    } else {
+      const weatherData = await fetchWeather(lat, lon, newDateFrom, newDateTo);
+      forecast = weatherData.daily.time.map((date, i) => ({
+        date,
+        maxTemp: weatherData.daily.temperature_2m_max[i],
+        minTemp: weatherData.daily.temperature_2m_min[i],
+        precipitation: weatherData.daily.precipitation_sum[i],
+        windspeed: weatherData.daily.windspeed_10m_max[i],
+        weathercode: weatherData.daily.weathercode[i],
+        description: wmoDescription(weatherData.daily.weathercode[i])
+      }));
+      timezone = weatherData.timezone;
+    }
 
-    const stored = JSON.stringify({ forecast, timezone: weatherData.timezone });
+    const stored = JSON.stringify({ forecast, timezone });
 
     db.run(
       `UPDATE weather_queries SET location_name=?, latitude=?, longitude=?, date_from=?, date_to=?, weather_data=?, notes=?, updated_at=datetime('now') WHERE id=?`,
