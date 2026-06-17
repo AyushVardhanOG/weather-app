@@ -45,10 +45,35 @@ function saveDB() {
   fs.writeFileSync(DB_FILE, Buffer.from(data));
 }
 
+// ─── Retry helper for rate-limited requests ────────────────────────────────────
+async function fetchWithRetry(url, retries = 3, delayMs = 1500) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await axios.get(url);
+    } catch (err) {
+      const status = err.response?.status;
+      const isLastAttempt = attempt === retries;
+      if (status === 429 && !isLastAttempt) {
+        await new Promise(r => setTimeout(r, delayMs * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 // ─── Geocoding ─────────────────────────────────────────────────────────────────
 async function geocode(location) {
   const url = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`;
-  const res = await axios.get(url);
+  let res;
+  try {
+    res = await fetchWithRetry(url);
+  } catch (err) {
+    if (err.response?.status === 429) {
+      throw new Error('Weather service is busy right now. Please wait a few seconds and try again.');
+    }
+    throw err;
+  }
   if (!res.data.results || res.data.results.length === 0) {
     throw new Error(`Location "${location}" not found`);
   }
@@ -68,8 +93,15 @@ async function fetchWeather(lat, lon, dateFrom, dateTo) {
     `&hourly=temperature_2m,relativehumidity_2m,windspeed_10m,weathercode` +
     `&current_weather=true` +
     `&timezone=auto&start_date=${dateFrom}&end_date=${dateTo}`;
-  const res = await axios.get(url);
-  return res.data;
+  try {
+    const res = await fetchWithRetry(url);
+    return res.data;
+  } catch (err) {
+    if (err.response?.status === 429) {
+      throw new Error('Weather service is busy right now. Please wait a few seconds and try again.');
+    }
+    throw err;
+  }
 }
 
 function wmoDescription(code) {
